@@ -30,10 +30,10 @@ PORT=0
 ## Common Utility functions ##
 
 function hasCamera() {
-  vcgencmd get_camera | grep -q detected=1
+  vcgencmd get_camera | grep -q detected=1;
 }
 
-funciton checkRoot() {
+function checkRoot() {
   # Make sure only root can run our script
   if [[ $EUID -ne 0 ]]; then
      echo "This script must be run as root" 1>&2

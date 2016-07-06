@@ -2,13 +2,11 @@
 # tx script
 
 THIS_FOLDER=$( cd "$( dirname "${BASH_SOURCE:-$0}" )" && pwd ) # get path of this script
-echo "THIS_FOLDER -> $THIS_FOLDER"
-
 source "$THIS_FOLDER/settings.sh"
 
 #if we detect no camera, we fall asleep
 if ! hasCamera; then
-  echo "tx.sh: Falling asleep because no camera has been detected"
+  echo "$0: Falling asleep because no camera has been detected"
   sleep 365d
 fi
 
