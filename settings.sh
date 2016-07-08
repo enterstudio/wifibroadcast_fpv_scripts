@@ -9,10 +9,8 @@ KEYFRAMERATE=48
 
 
 # Transmission and recording settings
-NIC="wlan0"
 CHANNEL2G="13"
 CHANNEL5G="149"
-NICS=$(ls /sys/class/net | grep wlan)
 SAVE_PATH="$HOME/video"
 
 WBC_PATH="$THIS_FOLDER/../wifibroadcast"

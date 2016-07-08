@@ -2,36 +2,59 @@
 
 THIS_FOLDER=$( cd "$( dirname "${BASH_SOURCE:-$0}" )" && pwd ) # get path of this script
 source "$THIS_FOLDER/settings.sh"
-  
+
+function eecho() { echo "$@" >&2; }
+
 function vtx() {
-  echo "Starting tx for $NIC"
-  raspivid -ih -t 0 -w "$WIDTH" -h "$HEIGHT" -fps "$FPS" -b "$BITRATE" -n -g "$KEYFRAMERATE" -pf high -o - | $WBC_PATH/tx -p "$PORT" -b "$BLOCK_SIZE" -r "$FECS" -f "$PACKET_LENGTH" "$NIC"
+  hasCamera || { eecho "no camera!"; exit 1; }
+  while true; do
+    NICS="$(getInterfaces)";
+    if [[ $(echo $NICS | wc -l) -ne 1 ]]; then ##no/too many interfaces!
+      echo "$NICS != 1";
+      sleep 1;
+      continue;
+    fi
 
-  echo "finished with exit code $?"
-  ls /sys/class/net | grep -q eth || echo "should shut down!?"
+    echo "Starting tx for $NICS"
+    raspivid -ih -t 0 -w "$WIDTH" -h "$HEIGHT" -fps "$FPS" -b "$BITRATE" -n -g "$KEYFRAMERATE" -pf high -o - |
+      $WBC_PATH/tx -p "$PORT" -b "$BLOCK_SIZE" -r "$FECS" -f "$PACKET_LENGTH" "$NICS"
 
-  killall raspivid
-  killall tx
+    echo "finished with exit code $?"
+    ls /sys/class/net | grep -q eth || echo "should shut down!?"
+
+    killall raspivid
+    killall tx
+  done
 }
-  
+
 function vrx() {
-  if [ -d "$SAVE_PATH" ]; then
-    echo "Starting with recording"
-    FILE_NAME="$SAVE_PATH/$(date +"%Y%m%d")-$(ls $SAVE_PATH | wc -l).rawvid"
-    $WBC_PATH/rx -p $PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS | tee "$FILE_NAME" | $DISPLAY_PROGRAM
-  else
-    echo "Starting without recording"
-    $WBC_PATH/rx -p $PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS | $DISPLAY_PROGRAM
-  fi
-  echo "finished with exit code $?"
-  ls /sys/class/net | grep -q eth || echo "should shut down!?"
+  while true; do
+    NICS="$(getInterfaces)";
+    if [[ -z $NICS ]]; then ##no interfaces!
+      echo "$NICS != 1";
+      sleep 1;
+      continue;
+    fi
+
+    if [ -d "$SAVE_PATH" ]; then
+      echo "Starting with recording"
+      FILE_NAME="$SAVE_PATH/$(date +"%Y%m%d")-$(ls $SAVE_PATH | wc -l).rawvid"
+      $WBC_PATH/rx -p $PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS | tee "$FILE_NAME" | $DISPLAY_PROGRAM
+    else
+      echo "Starting without recording"
+      $WBC_PATH/rx -p $PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS | $DISPLAY_PROGRAM
+    fi
+    echo "finished with exit code $?"
+    ls /sys/class/net | grep -q eth || echo "should shut down!?"
+  done
 }
-  
+
 function osd() {
   if [ -d "$SAVE_PATH" ]; then
     echo "Starting osd with recording"
     FILE_NAME="$SAVE_PATH/$(date +"%Y%m%d")-$(ls $SAVE_PATH | wc -l).telem"
-    $WBC_PATH/rx -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH -p $PORT $NIC | tee "$FILE_NAME" | $OSD_PATH/osd "/opt/vc/src/hello_pi/hello_font/"
+    $WBC_PATH/rx -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH -p $PORT $NIC | tee "$FILE_NAME" |
+      $OSD_PATH/osd "/opt/vc/src/hello_pi/hello_font/"
   else
     echo "Starting osd without recording (create $SAVE_PATH to enable recordings)"
     $WBC_PATH/rx -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH -p $PORT $NIC | $OSD_PATH/osd "/opt/vc/src/hello_pi/hello_font/"
@@ -45,11 +68,8 @@ function hasCamera() {
 }
 
 function checkRoot() {
-  # Make sure only root can run our script
-  if [[ $EUID -ne 0 ]]; then
-     echo "This script must be run as root" 1>&2
-     exit 1
-  fi
+  # Make sure only root can run this
+  [[ $EUID -ne 0 ]] && { eecho "This script must be run as root"; return 1; } || return 0;
 }
 
 function keyboardConnected() {
@@ -68,19 +88,42 @@ function keyboardConnected() {
   return 0;
 }
 
-function prepare_nic {
-  DRIVER=`cat /sys/class/net/$1/device/uevent | grep DRIVER | sed 's/DRIVER=//'`
+function getInterfaces() {
+  local NICS="$(ls /sys/class/net | grep wlan)";
+  eecho "interfaces -> ($NICS)";
+  local -a RET
+  if [[ -z $NICS ]]; then ##no interfaces!
+    eecho "no interfaces ($NICS)";
+    return 1;
+  else
+    local NIC
+    for NIC in $NICS; do
+      ##avoid re-preparing the nic
+      if ifconfig $NIC | grep -q "encap:UNSPEC"; then
+        eecho "already setup $NIC"
+        RET+="$NIC"
+      else
+        prepareNic "$NIC" && RET+=$NIC || eecho "error $NIC";
+      fi
+    done
+  fi
+  echo "${RET}"
+}
 
+function prepareNic() {
+  local DRIVER=$(cat "/sys/class/net/$1/device/uevent" | grep DRIVER | sed 's/DRIVER=//')
+
+  checkRoot || return 1;
   case $DRIVER in
     ath9k_htc)
-      echo "Setting $1 to channel $CHANNEL2G"
+      eecho "Setting $1 to channel $CHANNEL2G"
       ifconfig $1 down
       iw dev $1 set monitor otherbss fcsfail
       ifconfig $1 up
       iwconfig $1 channel $CHANNEL2G
     ;;
     rt2800usb)
-      echo "Setting $1 to channel $CHANNEL5G"
+      eecho "Setting $1 to channel $CHANNEL5G"
       ifconfig $1 down
       iw dev $1 set monitor otherbss fcsfail
       ifconfig $1 up
@@ -88,9 +131,11 @@ function prepare_nic {
       iwconfig $1 rate 24M
       iwconfig $1 channel $CHANNEL5G
     ;;
-    *) echo "ERROR: Unknown wifi driver on $1: $DRIVER" && exit
+    *) { eecho "ERROR: Unknown wifi driver on $1: $DRIVER" && return 1; }
     ;;
   esac
+  eecho "successfully setup $1 (with driver $DRIVER)"
+  return 0;
 }
 
 ## only execute this if this script is directly called
@@ -102,7 +147,7 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
   elif [[ "$1" = "osd" ]]; then
     osd
   else
-    screen -list | grep -q wbcast && { echo "wbcast screen already running!" >&2; exit 0; }
+    screen -list | grep -q wbcast && { eecho "wbcast screen already running!"; exit 0; }
     echo "starting wifi-broadcast!"
 
     PARENT="$(ps -o comm= $PPID)"
@@ -113,12 +158,7 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
       exit 0
     fi
 
-    checkRoot
-
-    #prepare NICS
-    for NIC in $NICS; do
-      prepare_nic $NIC
-    done
+    checkRoot || exit 1
 
     if hasCamera; then
       ## transmitter ##
