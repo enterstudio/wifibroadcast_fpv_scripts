@@ -4,6 +4,13 @@
 THIS_FOLDER=$( cd "$( dirname "${BASH_SOURCE:-$0}" )" && pwd ) # get path of this script
 source "$THIS_FOLDER/settings.sh"
 
+PARENT="$(ps -o comm= $PPID)"
+echo "parent is $PARENT, keyboardConnected = $(keyboardConnected)"
+if [[ "$PARENT" -ne "bash" ]] && keyboardConnected; then
+  echo "$0: Keyboard detected, preventing launch!"
+  sleep 365d
+fi
+
 #if we detect no camera, we fall asleep
 if ! hasCamera; then
   echo "$0: Falling asleep because no camera has been detected"

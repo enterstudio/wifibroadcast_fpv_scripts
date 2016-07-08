@@ -41,6 +41,22 @@ function checkRoot() {
   fi
 }
 
+function keyboardConnected() {
+  for dev in /sys/bus/usb/devices/*-*:*
+  do
+    if [ -f $dev/bInterfaceClass ]
+    then
+      if [[ "$(cat $dev/bInterfaceClass)" == "03" && "$(cat $dev/bInterfaceProtocol)" == "01" ]]
+      then
+        echo "Keyboard detected: $dev"
+        return 1;
+      fi
+    fi
+  done
+  echo "keyboard missing"
+  return 0;
+}
+
 function prepare_nic {
   DRIVER=`cat /sys/class/net/$1/device/uevent | grep DRIVER | sed 's/DRIVER=//'`
 
