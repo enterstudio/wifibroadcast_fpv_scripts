@@ -10,8 +10,8 @@ function vtx() {
   while true; do
     NICS="$(getInterfaces)";
     if [[ $(echo $NICS | wc -l) -ne 1 ]]; then ##no/too many interfaces!
-      echo "$NICS != 1";
-      sleep 1;
+      echo "interfaces missing $NICS != 1";
+      sleep 6;
       continue;
     fi
 
@@ -22,9 +22,11 @@ function vtx() {
     echo "finished with exit code $?"
     ls /sys/class/net | grep -q eth || echo "should shut down!?"
 
-    killall raspivid
-    killall tx
+    killall raspivid &>/dev/null
+    killall tx &>/dev/null
+    sleep 5
   done
+  sleep 2
 }
 
 function vrx() {
@@ -90,10 +92,9 @@ function keyboardConnected() {
 
 function getInterfaces() {
   local NICS="$(ls /sys/class/net | grep wlan)";
-  eecho "interfaces -> ($NICS)";
   local -a RET
   if [[ -z $NICS ]]; then ##no interfaces!
-    eecho "no interfaces ($NICS)";
+    # eecho "no interfaces ($NICS)";
     return 1;
   else
     local NIC
@@ -163,14 +164,18 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
     if hasCamera; then
       ## transmitter ##
       echo "starting transmitter $0"
-      screen -AdmS "wbc" $0 tx
+      # screen -AdmS wbcast bash
+      # screen -S wbcast -X zombie qr #enable zombie mode to keep window open after failure
+      # screen -S wbcast -X screen $0 tx
+      vtx
     else
       ## receiver ##
       echo "starting receiver $0"
-      screen -AdmS wbcast $0 tx
-      screen -S wbcast -X zombie qr #enable zombie mode to keep window open after failure
-      screen -S wbcast -X screen $0 osd
+      vrx
+      # screen -dmS wbcast $0 rx
+      # screen -S wbcast -X zombie qr #enable zombie mode to keep window open after failure
+      # screen -S wbcast -X screen $0 osd
     fi
-    echo "connect with 'screen -r' to view started jobs"
+    echo "connect with 'screen -r' to view started jobs $(screen -ls)"
   fi
 fi
