@@ -24,4 +24,5 @@ BLOCK_SIZE=8
 FECS=4
 PACKET_LENGTH=1024
 PORT=0
+TELEM_PORT=1
 ##################################

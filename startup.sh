@@ -30,7 +30,7 @@ function startTransmit() {
       sleep 6;
       continue;
     fi
-    
+
     {
       sleep 10;
       echo "now monitoring for wlan disconnects"
@@ -40,6 +40,13 @@ function startTransmit() {
       killall tx &>/dev/null
       poweroff;
     } &
+
+    # {
+    #   sleep 2;
+    #   local TELEM_FILE_NAME="$(logFilePath).telem"
+    #   echo "starting telmetry transmit (saving to $TELEM_FILE_NAME)"
+    #   cat /dev/ttyAMA0 | tee "$TELEM_FILE_NAME" | $WBC_PATH/tx -p "$TELEM_PORT" -b "$BLOCK_SIZE" -r "$FECS" -f "$PACKET_LENGTH" "$NICS"
+    # } &
 
     if [ -d "$SAVE_PATH" ]; then
       local FILE_NAME="$(logFilePath)"
@@ -68,7 +75,7 @@ function startReceive() {
       sleep 1;
       continue;
     fi
-    
+
     {
       sleep 10;
       echo "now monitoring for wlan disconnects"
@@ -79,6 +86,8 @@ function startReceive() {
       sleep 5
       poweroff;
     } &
+
+    # { sleep 2; startOSD; } &
 
     if [ -d "$SAVE_PATH" ]; then
       local FILE_NAME="$(logFilePath)"
@@ -93,15 +102,10 @@ function startReceive() {
 }
 
 function startOSD() {
-  if [ -d "$SAVE_PATH" ]; then
-    echo "Starting osd with recording"
-    FILE_NAME="$SAVE_PATH/$(date +"%Y%m%d")-$(ls $SAVE_PATH | wc -l).telem"
-    $WBC_PATH/rx -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH -p $PORT $NIC | tee "$FILE_NAME" |
-      $OSD_PATH/osd "/opt/vc/src/hello_pi/hello_font/"
-  else
-    echo "Starting osd without recording (create $SAVE_PATH to enable recordings)"
-    $WBC_PATH/rx -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH -p $PORT $NIC | $OSD_PATH/osd "/opt/vc/src/hello_pi/hello_font/"
-  fi
+  local TELEM_FILE_NAME="$(logFilePath).telem"
+  echo "starting telmetry OSD (saving output to $TELEM_FILE_NAME)"
+  $WBC_PATH/rx -p $TELEM_PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS |
+    tee "$TELEM_FILE_NAME" | $OSD_PATH/osd "/opt/vc/src/hello_pi/hello_font/"
 }
 
 ## Common Utility functions ##
