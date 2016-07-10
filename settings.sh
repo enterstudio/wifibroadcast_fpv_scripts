@@ -4,14 +4,14 @@
 WIDTH=1280
 HEIGHT=720
 FPS=48
-BITRATE=3000000
+BITRATE=4000000
 KEYFRAMERATE=24
 
 
 # Transmission and recording settings
 CHANNEL2G="13"
 CHANNEL5G="149"
-SAVE_PATH="$HOME/video"
+SAVE_PATH="/data/video"
 
 WBC_PATH="$THIS_FOLDER/../wifibroadcast"
 OSD_PATH="$THIS_FOLDER/../osd"

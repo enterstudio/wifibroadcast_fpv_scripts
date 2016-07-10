@@ -5,7 +5,23 @@ source "$THIS_FOLDER/settings.sh"
 
 function eecho() { echo "$@" >&2; }
 
-function vtx() {
+function logFilePath() {
+  echo "$SAVE_PATH/$(date +"%Y%m%d-%H%M%S")-$(ls "$SAVE_PATH/$(date +%Y%m%d)-*" | wc -l).rawvid"
+}
+
+function waitWlanUnplug() {
+  #argument 1: network card to watch
+  while true; do
+    if ! ls /sys/class/net | grep -q "${1:-wlan}"; then
+      if ! ls /sys/class/net | grep -q eth; then
+        return
+      fi
+    fi
+    sleep 10
+  done
+}
+
+function startTransmit() {
   hasCamera || { eecho "no camera!"; exit 1; }
   while true; do
     NICS="$(getInterfaces)";
@@ -14,14 +30,29 @@ function vtx() {
       sleep 6;
       continue;
     fi
+    
+    {
+      sleep 10;
+      echo "now monitoring for wlan disconnects"
+      waitWlanUnplug "$NICS";
+      echo "Network adapter $NICS unplugged! Shutting down!"
+      killall raspivid &>/dev/null
+      killall tx &>/dev/null
+      poweroff;
+    } &
 
-    echo "Starting tx for $NICS"
-    raspivid -ih -t 0 -w "$WIDTH" -h "$HEIGHT" -fps "$FPS" -b "$BITRATE" -n -g "$KEYFRAMERATE" -pf high -o - |
-      $WBC_PATH/tx -p "$PORT" -b "$BLOCK_SIZE" -r "$FECS" -f "$PACKET_LENGTH" "$NICS"
+    if [ -d "$SAVE_PATH" ]; then
+      local FILE_NAME="$(logFilePath)"
+      echo "Starting with recording to $FILE_NAME"
+      raspivid -ih -t 0 -w "$WIDTH" -h "$HEIGHT" -fps "$FPS" -b "$BITRATE" -n -g "$KEYFRAMERATE" -pf high -o - |
+        tee "$FILE_NAME" | $WBC_PATH/tx -p "$PORT" -b "$BLOCK_SIZE" -r "$FECS" -f "$PACKET_LENGTH" "$NICS"
+    else
+      echo "Starting without recording"
+      raspivid -ih -t 0 -w "$WIDTH" -h "$HEIGHT" -fps "$FPS" -b "$BITRATE" -n -g "$KEYFRAMERATE" -pf high -o - |
+        $WBC_PATH/tx -p "$PORT" -b "$BLOCK_SIZE" -r "$FECS" -f "$PACKET_LENGTH" "$NICS"
+    fi
 
     echo "finished with exit code $?"
-    ls /sys/class/net | grep -q eth || echo "should shut down!?"
-
     killall raspivid &>/dev/null
     killall tx &>/dev/null
     sleep 5
@@ -29,7 +60,7 @@ function vtx() {
   sleep 2
 }
 
-function vrx() {
+function startReceive() {
   while true; do
     NICS="$(getInterfaces)";
     if [[ -z $NICS ]]; then ##no interfaces!
@@ -37,21 +68,31 @@ function vrx() {
       sleep 1;
       continue;
     fi
+    
+    {
+      sleep 10;
+      echo "now monitoring for wlan disconnects"
+      waitWlanUnplug "$NICS";
+      echo "Network adapter $NICS unplugged! Shutting down!"
+      killall $(basename $DISPLAY_PROGRAM) &>/dev/null
+      killall rx &>/dev/null
+      sleep 5
+      poweroff;
+    } &
 
     if [ -d "$SAVE_PATH" ]; then
-      echo "Starting with recording"
-      FILE_NAME="$SAVE_PATH/$(date +"%Y%m%d")-$(ls $SAVE_PATH | wc -l).rawvid"
+      local FILE_NAME="$(logFilePath)"
+      echo "Starting with recording to $FILE_NAME"
       $WBC_PATH/rx -p $PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS | tee "$FILE_NAME" | $DISPLAY_PROGRAM
     else
       echo "Starting without recording"
       $WBC_PATH/rx -p $PORT -b $BLOCK_SIZE -r $FECS -f $PACKET_LENGTH $NICS | $DISPLAY_PROGRAM
     fi
     echo "finished with exit code $?"
-    ls /sys/class/net | grep -q eth || echo "should shut down!?"
   done
 }
 
-function osd() {
+function startOSD() {
   if [ -d "$SAVE_PATH" ]; then
     echo "Starting osd with recording"
     FILE_NAME="$SAVE_PATH/$(date +"%Y%m%d")-$(ls $SAVE_PATH | wc -l).telem"
@@ -141,12 +182,9 @@ function prepareNic() {
 
 ## only execute this if this script is directly called
 if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
-  if [[ "$1" = "rx" ]]; then
-    vrx
-  elif [[ "$1" = "tx" ]]; then
-    vtx
-  elif [[ "$1" = "osd" ]]; then
-    osd
+  if [[ "$1" = "rx" ]]; then    startReceive
+  elif [[ "$1" = "tx" ]]; then  startTransmit
+  elif [[ "$1" = "osd" ]]; then startOSD
   else
     screen -list | grep -q wbcast && { eecho "wbcast screen already running!"; exit 0; }
     echo "starting wifi-broadcast!"
@@ -167,15 +205,15 @@ if [[ "${BASH_SOURCE[0]}" = "${0}" ]]; then
       # screen -AdmS wbcast bash
       # screen -S wbcast -X zombie qr #enable zombie mode to keep window open after failure
       # screen -S wbcast -X screen $0 tx
-      vtx
+      startTransmit
     else
       ## receiver ##
       echo "starting receiver $0"
-      vrx
+      startReceive
       # screen -dmS wbcast $0 rx
       # screen -S wbcast -X zombie qr #enable zombie mode to keep window open after failure
       # screen -S wbcast -X screen $0 osd
     fi
-    echo "connect with 'screen -r' to view started jobs $(screen -ls)"
+    # echo "connect with 'screen -r' to view started jobs $(screen -ls)"
   fi
 fi
